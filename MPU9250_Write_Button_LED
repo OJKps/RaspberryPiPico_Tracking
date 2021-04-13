@@ -1,0 +1,83 @@
+import utime
+import FaBo9Axis_MPU9250
+import time
+import sys
+from machine import Pin
+import _thread
+import gc
+from utils_func import free
+
+mpu9250 = FaBo9Axis_MPU9250.MPU9250()
+button = Pin(10, Pin.IN, Pin.PULL_DOWN)
+led = Pin(11, Pin.OUT)
+led.toggle()
+global button_val
+global f
+button_val = False
+baton = _thread.allocate_lock()
+
+print("create csv")
+now = utime.localtime()
+name_file = "data_" + str(now[0]) + "_" + str(now[1]) + "_" + str(now[2]) + "_" + str(now[3]) + "_" + str(now[4]) + "_" + str(now[5]) + ".csv"
+f = open(name_file, 'w')
+f.write('year,month,day,hour,min,sec,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z,mag_x,mag_y,mag_z\n')
+                    
+
+gc.enable()
+gc.collect()
+try:
+    def second_thread():
+        global button_val
+        print("2 Thread")
+        while True:
+            button_val_curr = button.value()
+            if button_val_curr == True:
+                #baton.acquire()
+                if button_val == True:
+                    button_val = False
+                    print("stop recording")
+                else:
+                    button_val = True
+                    print("start recording")
+                led.toggle()
+                #baton.release()
+                time.sleep(2)
+            gc.collect()
+            time.sleep(0.1)
+        
+    _thread.start_new_thread(second_thread, ())
+    save_val = True
+    while True:
+        if button_val:
+            accel = mpu9250.readAccel()
+            gyro = mpu9250.readGyro()
+            mag = mpu9250.readMagnet()
+            
+            now = utime.localtime()
+            curr_time = str(now[0]) + ',' + str(now[1]) + ',' + str(now[2]) + ',' + str(now[3]) + ',' + str(now[4]) + ',' + str(now[5]) + ','
+            data_accel = str(accel['x']) + ',' + str(accel['y']) + ',' + str(accel['z']) + ','
+            data_gyro = str(gyro['x']) + ',' + str(gyro['y']) + ',' + str(gyro['z']) + ','
+            data_mag = str(mag['x']) + ',' + str(mag['y']) + ',' + str(mag['z']) + '\n'
+            #baton.acquire()
+            f.write((curr_time + data_accel + data_gyro + data_mag))
+            #baton.release()
+            save_val = False
+            time.sleep(0.3)
+            gc.collect()
+        elif not save_val:
+            #baton.acquire()
+            save_val = True
+            f.close()
+            f = open(name_file, 'a')
+            #baton.release()
+            gc.collect()
+        else:
+            time.sleep(0.5)
+except KeyboardInterrupt:
+    f.close()
+    gc.collect()
+    sys.exit()
+
+
+
+
